@@ -1,0 +1,13 @@
+[project]
+name = "polarity-fetcher"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pandas[pyarrow]>=2.3.3",
+    "psycopg[binary,pool]>=3.2.12",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+    "tqdm>=4.67.1",
+]
