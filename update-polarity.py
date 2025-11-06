@@ -109,7 +109,6 @@ def do_work(item: Tuple[str, str], idtoken: str):
 
 def main():
     dotenv.load_dotenv()
-    l.basicConfig(level=l.INFO)
 
     parser = argparse.ArgumentParser(
         description="Update Polarity Digital metrics and store in HDF5 file"
@@ -132,7 +131,15 @@ def main():
         default=4,
         help="Number of parallel requests to make",
     )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default=None,
+        help="File to write logs to (if not set, logs to stdout)",
+    )
     args = parser.parse_args()
+
+    l.basicConfig(level=l.INFO, filename=args.log_file)
 
     with logging_redirect_tqdm():
         l.info("fetching available metrics...")
