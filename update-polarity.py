@@ -303,12 +303,12 @@ def main():
         l.info(f"{len(metrics_by_coin)} coins found")
 
         flush_countdown = args.flush_interval
+        df = None
 
         with ThreadPoolExecutor(max_workers=args.parallelism) as executor:
             items = [(c, m) for c, ms in metrics_by_coin.items() for m in ms]
             gen = executor.map(lambda c: do_work(c, args.idtoken), items)
 
-            df = None
             flush_countdown = args.flush_interval
 
             for df2 in tqdm(gen, total=len(items), desc="fetching data"):
