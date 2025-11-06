@@ -140,9 +140,25 @@ def main():
         default=None,
         help="File to write logs to (if not set, logs to stdout)",
     )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    )
+    parser.add_argument(
+        "--flush-interval",
+        type=int,
+        default=100,
+        help="Number of metrics to fetch before flushing intermediate results to disk",
+    )
     args = parser.parse_args()
 
-    l.basicConfig(level=l.INFO, filename=args.log_file)
+    l.basicConfig(
+        level=getattr(l, args.log_level.upper(), l.INFO),
+        filename=args.log_file,
+    )
+    temp_file = f"{args.output}.part"
 
     with logging_redirect_tqdm():
         l.info("fetching available metrics...")
