@@ -151,6 +151,8 @@ def main():
         l.info(f"writing to {args.output}")
         l.info(f"{len(metrics_by_coin)} coins found")
 
+        flush_countdown = args.flush_interval
+
         with ThreadPoolExecutor(max_workers=args.parallelism) as executor:
             items = [(c, m) for c, ms in metrics_by_coin.items() for m in ms]
             gen = executor.map(lambda c: do_work(c, args.idtoken), items)
@@ -161,18 +163,30 @@ def main():
                     if len(dff) == 0:
                         l.info("no data returned, skipping...")
                         continue
+
+                    # merge dataframes
                     if df is None:
                         df = dff
                     else:
                         df = pd.merge(
                             df, dff, left_index=True, right_index=True, how="outer"
                         )
+
+                    # periodic flush to disk
+                    flush_countdown -= 1
+                    if flush_countdown <= 0:
+                        l.info("intermediate storing data...")
+                        df.to_parquet(temp_file, engine="pyarrow", compression="snappy")
+                        flush_countdown = args.flush_interval
+
                 except Exception as e:
                     l.error(f"error merging data: {e}")
                     continue
 
         l.info("storing data...")
         df.to_parquet(args.output, engine="pyarrow", compression="snappy")
+
+        os.remove(temp_file)
 
 
 if __name__ == "__main__":
