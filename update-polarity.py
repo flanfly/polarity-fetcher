@@ -146,13 +146,19 @@ def main():
             gen = executor.map(lambda c: do_work(c, args.idtoken), items)
 
             df = None
-            for dff in list(tqdm(gen, total=len(items), desc="fetching data")):
-                if df is None:
-                    df = dff
-                else:
-                    df = pd.merge(
-                        df, dff, left_index=True, right_index=True, how="outer"
-                    )
+            for dff in tqdm(gen, total=len(items), desc="fetching data"):
+                try:
+                    if len(dff) == 0:
+                        continue
+                    if df is None:
+                        df = dff
+                    else:
+                        df = pd.merge(
+                            df, dff, left_index=True, right_index=True, how="outer"
+                        )
+                except Exception as e:
+                    l.error(f"error merging data: {e}")
+                    continue
 
         l.info("storing data...")
         df.to_parquet(args.output, engine="pyarrow", compression="snappy")
