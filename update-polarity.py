@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 import time
 import logging as l
 import os
+import unittest
 
 import pandas as pd
 import requests  # type: ignore
@@ -108,6 +109,142 @@ def do_work(item: Tuple[str, str], idtoken: str):
             wait += 1
 
 
+class TestDoMerge(unittest.TestCase):
+    def test_update_column(self):
+        df1 = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(
+                    [
+                        "2023-01-01",
+                        "2023-01-02",
+                        "2023-01-03",
+                        "2023-01-01",
+                        "2023-01-02",
+                        "2023-01-03",
+                    ]
+                ),
+                "asset": ["btc", "btc", "btc", "eth", "eth", "eth"],
+                "metric1": [1.0, 2.0, 3.0, None, None, None],
+                "metric2": [None, None, None, 1.0, 2.0, 3.0],
+            }
+        ).set_index(["timestamp", "asset"])
+
+        df2 = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(["2023-01-01", "2023-01-02", "2023-01-03"]),
+                "asset": ["btc", "btc", "btc"],
+                "metric2": [4.0, 5.0, 6.0],
+            }
+        ).set_index(["timestamp", "asset"])
+
+        merged = do_merge(df1, df2)
+        expected = pd.DataFrame(
+            {
+                "metric1": [1.0, 2.0, 3.0, None, None, None],
+                "metric2": [4.0, 5.0, 6.0, 1.0, 2.0, 3.0],
+            },
+            index=pd.MultiIndex.from_tuples(
+                [
+                    (pd.to_datetime("2023-01-01"), "btc"),
+                    (pd.to_datetime("2023-01-02"), "btc"),
+                    (pd.to_datetime("2023-01-03"), "btc"),
+                    (pd.to_datetime("2023-01-01"), "eth"),
+                    (pd.to_datetime("2023-01-02"), "eth"),
+                    (pd.to_datetime("2023-01-03"), "eth"),
+                ],
+                names=["timestamp", "asset"],
+            ),
+        ).sort_index()
+        pd.testing.assert_frame_equal(merged, expected)
+
+    def test_new_column(self):
+        df1 = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(["2023-01-01", "2023-01-02", "2023-01-03"]),
+                "asset": ["btc", "btc", "btc"],
+                "metric1": [1.0, 2.0, 3.0],
+            }
+        ).set_index(["timestamp", "asset"])
+
+        df2 = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(["2023-01-01", "2023-01-02", "2023-01-03"]),
+                "asset": ["btc", "btc", "btc"],
+                "metric2": [4.0, 5.0, 6.0],
+            }
+        ).set_index(["timestamp", "asset"])
+
+        merged = do_merge(df1, df2)
+
+        expected = pd.DataFrame(
+            {
+                "metric1": [1.0, 2.0, 3.0],
+                "metric2": [4.0, 5.0, 6.0],
+            },
+            index=pd.MultiIndex.from_tuples(
+                [
+                    (pd.to_datetime("2023-01-01"), "btc"),
+                    (pd.to_datetime("2023-01-02"), "btc"),
+                    (pd.to_datetime("2023-01-03"), "btc"),
+                ],
+                names=["timestamp", "asset"],
+            ),
+        ).sort_index()
+
+        pd.testing.assert_frame_equal(merged, expected)
+
+    def test_new_asset(self):
+        df1 = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(["2023-01-01", "2023-01-02", "2023-01-03"]),
+                "asset": ["btc", "btc", "btc"],
+                "metric1": [1.0, 2.0, 3.0],
+            }
+        ).set_index(["timestamp", "asset"])
+
+        df2 = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(["2023-01-01", "2023-01-02", "2023-01-03"]),
+                "asset": ["eth", "eth", "eth"],
+                "metric2": [4.0, 5.0, 6.0],
+            }
+        ).set_index(["timestamp", "asset"])
+
+        merged = do_merge(df1, df2)
+
+        expected = pd.DataFrame(
+            {
+                "metric1": [1.0, 2.0, 3.0, None, None, None],
+                "metric2": [None, None, None, 4.0, 5.0, 6.0],
+            },
+            index=pd.MultiIndex.from_tuples(
+                [
+                    (pd.to_datetime("2023-01-01"), "btc"),
+                    (pd.to_datetime("2023-01-02"), "btc"),
+                    (pd.to_datetime("2023-01-03"), "btc"),
+                    (pd.to_datetime("2023-01-01"), "eth"),
+                    (pd.to_datetime("2023-01-02"), "eth"),
+                    (pd.to_datetime("2023-01-03"), "eth"),
+                ],
+                names=["timestamp", "asset"],
+            ),
+        ).sort_index()
+
+        pd.testing.assert_frame_equal(merged, expected)
+
+
+def do_merge(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+    adf1, adf2 = df1.align(df2, join="outer", axis=0, copy=False)
+
+    for col in df2.columns:
+        if col not in adf1.columns:
+            adf1[col] = adf2[col]
+        else:
+            adf1[col] = adf2[col].combine_first(adf1[col])
+
+    return adf1.sort_index()
+
+
 def main():
     dotenv.load_dotenv()
 
@@ -172,19 +309,18 @@ def main():
             gen = executor.map(lambda c: do_work(c, args.idtoken), items)
 
             df = None
-            for dff in tqdm(gen, total=len(items), desc="fetching data"):
+            flush_countdown = args.flush_interval
+
+            for df2 in tqdm(gen, total=len(items), desc="fetching data"):
                 try:
-                    if len(dff) == 0:
-                        l.info("no data returned, skipping...")
+                    if df2.empty:
                         continue
 
                     # merge dataframes
                     if df is None:
-                        df = dff
+                        df = df2
                     else:
-                        df = pd.merge(
-                            df, dff, left_index=True, right_index=True, how="outer"
-                        )
+                        df = do_merge(df, df2)
 
                     # periodic flush to disk
                     flush_countdown -= 1
