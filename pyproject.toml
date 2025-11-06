@@ -1,7 +1,7 @@
 [project]
 name = "polarity-fetcher"
 version = "0.1.0"
-description = "Add your description here"
+description = "A tool to fetch metrics from Polarity API and store them in a PostgreSQL database."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

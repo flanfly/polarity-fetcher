@@ -60,9 +60,7 @@ def get_data(asset: str, metric: str, idtoken: str):
     )
 
     if resp.status_code >= 400 and resp.status_code < 500:
-        raise Unrecoverable(
-            f"Client error {resp.status_code}: {resp.text}. Check your ID token."
-        )
+        raise Unrecoverable(f"Client error {resp.status_code}: {resp.text}.")
     if resp.status_code != requests.codes.ok:
         raise Exception(f"HTTP {resp.status_code}: {resp.text}")
     body = resp.json()
