@@ -71,6 +71,8 @@ def get_data(asset: str, metric: str, idtoken: str):
             "Error fetching data: %s" % body.get("message", "Unknown error")
         )
 
+    l.debug(f"response body: {body}")
+
     timestamps = []
     values = []
     for row in body["data"]:
@@ -90,6 +92,7 @@ def do_work(item: Tuple[str, str], idtoken: str):
     while True:
         try:
             df = get_data(asset, metric, idtoken)
+            l.debug(f"fetched {len(df)} rows for {asset} {metric}")
             df["asset"] = asset
             df.set_index(["timestamp", "asset"], inplace=True)
 
@@ -156,6 +159,7 @@ def main():
             for dff in tqdm(gen, total=len(items), desc="fetching data"):
                 try:
                     if len(dff) == 0:
+                        l.info("no data returned, skipping...")
                         continue
                     if df is None:
                         df = dff
