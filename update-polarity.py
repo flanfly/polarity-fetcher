@@ -293,13 +293,14 @@ def main():
         level=getattr(l, args.log_level.upper(), l.INFO),
         filename=args.log_file,
     )
-    temp_file = f"{args.output}.part"
+    output_file = args.output.replace(":", "_")
+    temp_file = f"{output_file}.part"
 
     with logging_redirect_tqdm():
         l.info("fetching available metrics...")
         metrics_by_coin = available_metrics()
 
-        l.info(f"writing to {args.output}")
+        l.info(f"writing to {output_file}")
         l.info(f"{len(metrics_by_coin)} coins found")
 
         flush_countdown = args.flush_interval
@@ -334,7 +335,7 @@ def main():
                     continue
 
         l.info("storing data...")
-        df.to_parquet(args.output, engine="pyarrow", compression="snappy")
+        df.to_parquet(output_file, engine="pyarrow", compression="snappy")
 
         os.remove(temp_file)
 
