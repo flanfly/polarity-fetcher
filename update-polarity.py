@@ -81,7 +81,18 @@ def get_data(asset: str, metric: str, idtoken: str):
     return pd.DataFrame({"timestamp": timestamps, metric: values})
 
 
-def do_work(item: Tuple[str, str], idtoken: str):
+def save(df: pd.DataFrame, coin: str, output_dir: str):
+    os.makedirs(output_dir, exist_ok=True)
+
+    p = os.path.join(output_dir, f"{coin.lower()}.parquet")
+    l.info(f"saving data to {p}...")
+
+    df[df.index.get_level_values("asset") == coin.lower()].to_parquet(
+        p, engine="pyarrow", compression="snappy"
+    )
+
+
+def do_work(item: Tuple[str, str], idtoken: str) -> Tuple[str, str, pd.DataFrame]:
     coin, metric = item
     asset = coin.lower()
 
@@ -95,11 +106,11 @@ def do_work(item: Tuple[str, str], idtoken: str):
             df["asset"] = asset
             df.set_index(["timestamp", "asset"], inplace=True)
 
-            return df
+            return (coin, metric, df)
 
         except Unrecoverable as e:
             l.error(f"unrecoverable error fetching {asset} {metric}: {e}")
-            return pd.DataFrame()
+            return (coin, metric, pd.DataFrame())
 
         except Exception as e:
             l.error(f"error fetching {asset} {metric}: {e}")
@@ -234,6 +245,11 @@ class TestDoMerge(unittest.TestCase):
 
 
 def do_merge(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+    if df1 is None or df1.empty:
+        return df2
+    if df2 is None or df2.empty:
+        return df1
+
     adf1, adf2 = df1.align(df2, join="outer", axis=0, copy=False)
 
     for col in df2.columns:
@@ -258,10 +274,10 @@ def main():
         help="Polarity Digital ID token (or set POLARITY_IDTOKEN env variable)",
     )
     parser.add_argument(
-        "--output",
+        "--output-dir",
         type=str,
-        default="polarity-digital.parquet",
-        help="Output Parquet file",
+        default="data",
+        help="Output directory to store data files",
     )
     parser.add_argument(
         "--parallelism",
@@ -281,41 +297,31 @@ def main():
         default="INFO",
         help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
     )
-    parser.add_argument(
-        "--flush-interval",
-        type=int,
-        default=100,
-        help="Number of metrics to fetch before flushing intermediate results to disk",
-    )
     args = parser.parse_args()
 
     l.basicConfig(
         level=getattr(l, args.log_level.upper(), l.INFO),
         filename=args.log_file,
     )
-    output_file = args.output.replace(":", "_")
-    temp_file = f"{output_file}.part"
 
     with logging_redirect_tqdm():
         l.info("fetching available metrics...")
         metrics_by_coin = available_metrics()
 
-        l.info(f"writing to {output_file}")
+        l.info(f"writing to {args.output_dir}")
         l.info(f"{len(metrics_by_coin)} coins found")
 
-        flush_countdown = args.flush_interval
         df = None
 
         with ThreadPoolExecutor(max_workers=args.parallelism) as executor:
             items = [(c, m) for c, ms in metrics_by_coin.items() for m in ms]
             gen = executor.map(lambda c: do_work(c, args.idtoken), items)
 
-            flush_countdown = args.flush_interval
-
-            for df2 in tqdm(gen, total=len(items), desc="fetching data"):
+            for t in tqdm(gen, total=len(items), desc="fetching data"):
                 try:
-                    if df2.empty:
-                        continue
+                    coin, metric, df2 = t
+
+                    metrics_by_coin[coin].remove(metric)
 
                     # merge dataframes
                     if df is None:
@@ -323,21 +329,18 @@ def main():
                     else:
                         df = do_merge(df, df2)
 
-                    # periodic flush to disk
-                    flush_countdown -= 1
-                    if flush_countdown <= 0:
-                        l.info("intermediate storing data...")
-                        df.to_parquet(temp_file, engine="pyarrow", compression="snappy")
-                        flush_countdown = args.flush_interval
+                    if len(metrics_by_coin[coin]) == 0:
+                        save(df, coin, args.output_dir)
+                        del metrics_by_coin[coin]
+                        df = df[~(df.index.get_level_values("asset") == coin.lower())]
 
                 except Exception as e:
                     l.error(f"error merging data: {e}")
                     continue
 
-        l.info("storing data...")
-        df.to_parquet(output_file, engine="pyarrow", compression="snappy")
-
-        os.remove(temp_file)
+        if df is not None:
+            for coin in metrics_by_coin.keys():
+                save(df, coin, args.output_dir)
 
 
 if __name__ == "__main__":

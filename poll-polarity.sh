@@ -9,8 +9,8 @@ while true; do
   SAFE_PARQUET_FILE=$(echo "${PARQUET_FILE}" | tr ':' '_')
 
   echo "Starting polarity data update at $RFC3339"
-  uv run update-polarity.py --output "${SAFE_PARQUET_FILE}" --log-level DEBUG --log-file "update-polarity-$RFC3339.log"
+  uv run update-polarity.py --output-dir "${SAFE_PARQUET_FILE}" --log-level DEBUG --log-file "update-polarity-$RFC3339.log"
 
-  echo "Loading polarity data into database from ${SAFE_PARQUET_FILE}"
-  uv run load-database.py --input "${SAFE_PARQUET_FILE}"
+  #echo "Loading polarity data into database from ${SAFE_PARQUET_FILE}"
+  #uv run load-database.py --input "${SAFE_PARQUET_FILE}"
 done
