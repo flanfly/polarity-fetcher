@@ -60,7 +60,7 @@ def get_data(asset: str, metric: str, idtoken: str):
         timeout=30,
     )
 
-    if resp.status_code >= 400 and resp.status_code < 500:
+    if resp.status_code == 401 or resp.status_code == 404:
         raise Unrecoverable(f"Client error {resp.status_code}: {resp.text}.")
     if resp.status_code != requests.codes.ok:
         raise Exception(f"HTTP {resp.status_code}: {resp.text}")
